@@ -90,12 +90,12 @@ The [roadmap](docs/roadmap.md) builds toward durable Redis-backed idempotency, O
 HTTP orchestration example, and end-to-end agent evaluations. [Learning notes](docs/learning-notes.md)
 capture the engineering reasoning behind each milestone.
 
-## Portfolio context
+## Study focus
 
-This project exercises backend and systems concerns that appear in production agent platforms:
+This project explores backend and systems concerns that appear in production agent platforms:
 safe tool execution, identity and permissions, observability, reliability, and evaluation. The
-implementation stays intentionally compact so each invariant can be explained and tested in an
-interview.
+implementation stays intentionally compact so each invariant can be examined and tested in
+isolation.
 
 ## License
 
