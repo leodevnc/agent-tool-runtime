@@ -1,15 +1,30 @@
-"""Single-flight idempotency for retries and duplicate model tool calls."""
+"""Idempotency contracts and a process-local reference implementation."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Protocol
 
 from .models import ToolResult
 
 
 class IdempotencyConflictError(Exception):
     """Raised when a call ID is reused for different work."""
+
+
+class IdempotencyStoreError(Exception):
+    """Raised when the store cannot safely determine claim state."""
+
+
+class IdempotencyStore(Protocol):
+    async def claim(
+        self,
+        call_id: str,
+        fingerprint: str,
+    ) -> tuple[bool, asyncio.Future[ToolResult]]: ...
+
+    async def complete(self, call_id: str, result: ToolResult) -> bool: ...
 
 
 @dataclass(slots=True)
@@ -44,8 +59,9 @@ class InMemoryIdempotencyStore:
             self._entries[call_id] = _Entry(fingerprint=fingerprint, future=future)
             return True, future
 
-    async def complete(self, call_id: str, result: ToolResult) -> None:
+    async def complete(self, call_id: str, result: ToolResult) -> bool:
         async with self._lock:
             entry = self._entries[call_id]
             if not entry.future.done():
                 entry.future.set_result(result)
+            return True

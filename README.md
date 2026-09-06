@@ -14,6 +14,7 @@ and side effects.
 - Per-tool scope authorization
 - Deadlines and bounded exponential retries
 - Idempotent replay and concurrent single-flight execution
+- Optional Redis coordination with TTL leases and fencing tokens
 - Stable error translation without leaking internal exceptions
 - Metadata-only lifecycle events for observability
 - Async and sync handler support
@@ -26,6 +27,26 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 pytest
 ```
+
+Install the optional Redis client when coordinating workers across processes:
+
+```bash
+python -m pip install -e '.[redis]'
+```
+
+```python
+from redis.asyncio import Redis
+
+from agent_tool_runtime import RedisIdempotencyStore, ToolExecutor
+
+redis = Redis.from_url("redis://localhost:6379", decode_responses=False)
+store = RedisIdempotencyStore(redis, lease_seconds=30, result_ttl_seconds=86_400)
+executor = ToolExecutor(registry, idempotency_store=store)
+```
+
+The lease should exceed the expected bounded execution time. Side-effecting handlers should also
+forward the call ID to downstream systems; Redis fencing prevents stale runtime completion but
+cannot undo an external side effect.
 
 ## Example
 
@@ -86,9 +107,9 @@ The runtime deliberately does not call an LLM. It accepts a normalized `ToolCall
 portable across model providers and orchestration frameworks. See [architecture](docs/architecture.md)
 for the request flow, trust boundaries, and invariants.
 
-The [roadmap](docs/roadmap.md) builds toward durable Redis-backed idempotency, OpenTelemetry, an
-HTTP orchestration example, and end-to-end agent evaluations. [Learning notes](docs/learning-notes.md)
-capture the engineering reasoning behind each milestone.
+The [roadmap](docs/roadmap.md) builds from Redis-backed idempotency toward retry jitter,
+OpenTelemetry, an HTTP orchestration example, and end-to-end agent evaluations.
+[Learning notes](docs/learning-notes.md) capture the engineering reasoning behind each milestone.
 
 ## Study focus
 

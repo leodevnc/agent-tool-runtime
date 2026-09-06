@@ -15,6 +15,7 @@ from agent_tool_runtime import (
     ToolRegistry,
     ToolStatus,
 )
+from agent_tool_runtime.idempotency import IdempotencyStoreError
 
 SCHEMA = {
     "type": "object",
@@ -222,3 +223,60 @@ async def test_unknown_tool_returns_structured_error():
 
     assert result.status is ToolStatus.NOT_FOUND
     assert result.error.code == "tool_not_found"
+
+
+@pytest.mark.asyncio
+async def test_store_failure_prevents_execution_and_returns_structured_error():
+    called = False
+
+    def handler(args, context):
+        nonlocal called
+        called = True
+
+    class UnavailableStore:
+        async def claim(self, call_id, fingerprint):
+            raise IdempotencyStoreError("offline")
+
+        async def complete(self, call_id, result):
+            raise AssertionError("complete must not be called")
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition("double", handler, SCHEMA))
+    executor = ToolExecutor(registry, idempotency_store=UnavailableStore())
+
+    result = await executor.execute(
+        ToolCall("call-10", "double", {"value": 4}),
+        ExecutionContext("user-7"),
+    )
+
+    assert result.status is ToolStatus.FAILED
+    assert result.error.code == "idempotency_unavailable"
+    assert result.error.retryable is True
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_lost_claim_returns_handler_result_and_emits_degraded_event():
+    class LostClaimStore:
+        async def claim(self, call_id, fingerprint):
+            return True, asyncio.get_running_loop().create_future()
+
+        async def complete(self, call_id, result):
+            return False
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition("double", lambda args, context: 8, SCHEMA))
+    sink = MemoryEventSink()
+    executor = ToolExecutor(
+        registry,
+        idempotency_store=LostClaimStore(),
+        event_sink=sink,
+    )
+
+    result = await executor.execute(
+        ToolCall("call-11", "double", {"value": 4}),
+        ExecutionContext("user-7"),
+    )
+
+    assert result.status is ToolStatus.SUCCESS
+    assert EventType.IDEMPOTENCY_DEGRADED in [event.event_type for event in sink.events]

@@ -14,7 +14,12 @@ from typing import Any
 from jsonschema import Draft7Validator
 
 from .events import EventSink, EventType, ExecutionEvent, NullEventSink
-from .idempotency import IdempotencyConflictError, InMemoryIdempotencyStore
+from .idempotency import (
+    IdempotencyConflictError,
+    IdempotencyStore,
+    IdempotencyStoreError,
+    InMemoryIdempotencyStore,
+)
 from .models import ExecutionContext, ToolCall, ToolDefinition, ToolError, ToolResult, ToolStatus
 from .registry import ToolRegistry
 
@@ -26,7 +31,7 @@ class ToolExecutor:
         self,
         registry: ToolRegistry,
         *,
-        idempotency_store: InMemoryIdempotencyStore | None = None,
+        idempotency_store: IdempotencyStore | None = None,
         event_sink: EventSink | None = None,
         sleep: Sleep = asyncio.sleep,
     ) -> None:
@@ -63,6 +68,18 @@ class ToolExecutor:
                     "call_id was already used with a different request",
                 ),
             )
+        except IdempotencyStoreError:
+            return await self._finish(
+                call,
+                context,
+                ToolStatus.FAILED,
+                started,
+                error=ToolError(
+                    "idempotency_unavailable",
+                    "tool was not executed because idempotency state is unavailable",
+                    True,
+                ),
+            )
 
         if not owner:
             cached = await asyncio.shield(future)
@@ -71,7 +88,22 @@ class ToolExecutor:
             return replay
 
         result = await self._execute_owned(call, context, started)
-        await self._idempotency.complete(call.call_id, result)
+        try:
+            persisted = await self._idempotency.complete(call.call_id, result)
+            if not persisted:
+                await self._emit(
+                    EventType.IDEMPOTENCY_DEGRADED,
+                    call,
+                    context,
+                    reason="claim_lost_before_completion",
+                )
+        except IdempotencyStoreError:
+            await self._emit(
+                EventType.IDEMPOTENCY_DEGRADED,
+                call,
+                context,
+                reason="completion_failed",
+            )
         return result
 
     async def _execute_owned(

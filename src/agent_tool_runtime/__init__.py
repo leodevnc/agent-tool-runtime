@@ -12,6 +12,7 @@ from .models import (
     ToolResult,
     ToolStatus,
 )
+from .redis_idempotency import RedisIdempotencyStore
 from .registry import ToolRegistry
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "InMemoryIdempotencyStore",
     "MemoryEventSink",
     "RetryPolicy",
+    "RedisIdempotencyStore",
     "ToolCall",
     "ToolDefinition",
     "ToolError",

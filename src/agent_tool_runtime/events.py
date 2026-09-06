@@ -15,6 +15,7 @@ class EventType(StrEnum):
     AUTHORIZED = "authorized"
     ATTEMPT_STARTED = "attempt_started"
     RETRY_SCHEDULED = "retry_scheduled"
+    IDEMPOTENCY_DEGRADED = "idempotency_degraded"
     COMPLETED = "completed"
     REPLAYED = "replayed"
 

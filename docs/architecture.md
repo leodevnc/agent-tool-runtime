@@ -49,7 +49,20 @@ ToolCall + ExecutionContext
 
 ## Current tradeoffs
 
-- The in-memory store demonstrates semantics but is not durable across processes or restarts.
+- The in-memory store demonstrates single-process semantics. The Redis adapter uses atomic Lua
+  transitions, expiring owner leases, and fencing tokens for coordination across processes.
+- Redis replay requires JSON-serializable tool results. Serialization failure leaves the original
+  result available to its caller but emits an `idempotency_degraded` event because it cannot be
+  replayed safely.
+- Lease expiry can allow a replacement owner while the previous handler is still running. Fencing
+  prevents the old owner from overwriting Redis state, but side-effecting downstream systems should
+  also receive an idempotency or fencing key.
 - Retry delays use exponential backoff without jitter in v0.1 for deterministic testing.
 - Events are an internal contract; an OpenTelemetry adapter is planned.
 - Authorization uses scopes only. Policy engines and resource-level checks belong in adapters.
+
+## Verification layers
+
+- Deterministic unit tests model Redis records, TTL expiry, stale owners, and cross-executor replay.
+- CI runs the same claim and completion scripts against a Redis 7 service on Python 3.11, 3.12,
+  and 3.13. This catches Lua or client-protocol mistakes that a script-level fake cannot detect.
