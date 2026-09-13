@@ -8,6 +8,7 @@ from agent_tool_runtime import (
     EventType,
     ExecutionContext,
     MemoryEventSink,
+    RetryJitter,
     RetryPolicy,
     ToolCall,
     ToolDefinition,
@@ -124,6 +125,59 @@ async def test_retryable_failure_succeeds_on_second_attempt():
     assert result.attempts == 2
     assert attempts == 2
     assert EventType.RETRY_SCHEDULED in [event.event_type for event in sink.events]
+
+
+@pytest.mark.asyncio
+async def test_full_jitter_uses_injected_random_source_and_records_chosen_delay():
+    class TransientFailure(Exception):
+        pass
+
+    attempts = 0
+    delays = []
+
+    def handler(args, context):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise TransientFailure
+        return args["value"] * 2
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "double",
+            handler,
+            SCHEMA,
+            retry_policy=RetryPolicy(
+                max_attempts=2,
+                base_delay_ms=100,
+                jitter=RetryJitter.FULL,
+            ),
+            retryable_exceptions=(TransientFailure,),
+        )
+    )
+    sink = MemoryEventSink()
+    executor = ToolExecutor(
+        registry,
+        event_sink=sink,
+        sleep=record_sleep,
+        random_source=lambda: 0.25,
+    )
+
+    result = await executor.execute(
+        ToolCall("call-jitter", "double", {"value": 4}),
+        ExecutionContext("user-7"),
+    )
+
+    retry_event = next(
+        event for event in sink.events if event.event_type is EventType.RETRY_SCHEDULED
+    )
+    assert result.status is ToolStatus.SUCCESS
+    assert delays == [0.025]
+    assert retry_event.attributes["delay_ms"] == 25
 
 
 @pytest.mark.asyncio

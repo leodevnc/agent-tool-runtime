@@ -5,6 +5,7 @@ from .executor import ToolExecutor
 from .idempotency import InMemoryIdempotencyStore
 from .models import (
     ExecutionContext,
+    RetryJitter,
     RetryPolicy,
     ToolCall,
     ToolDefinition,
@@ -20,6 +21,7 @@ __all__ = [
     "ExecutionContext",
     "InMemoryIdempotencyStore",
     "MemoryEventSink",
+    "RetryJitter",
     "RetryPolicy",
     "RedisIdempotencyStore",
     "ToolCall",

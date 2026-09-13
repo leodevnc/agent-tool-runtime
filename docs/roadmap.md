@@ -12,10 +12,10 @@
 ## v0.2 - Durable distributed execution
 
 - Redis idempotency adapter with TTL and atomic claim/complete operations (complete)
-- Retry jitter and injectable random source
+- Retry jitter and injectable random source (complete)
 - Abandoned-claim recovery through expiring leases and fencing tokens (complete)
 - Explicit cancellation behavior
-- Property tests for idempotency invariants
+- Property tests for retry and idempotency invariants (complete)
 
 ## v0.3 - Production observability
 

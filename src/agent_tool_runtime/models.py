@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -16,6 +17,12 @@ class ToolStatus(StrEnum):
     TIMED_OUT = "timed_out"
     FAILED = "failed"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+
+
+class RetryJitter(StrEnum):
+    NONE = "none"
+    FULL = "full"
+    EQUAL = "equal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,16 +74,54 @@ class RetryPolicy:
     base_delay_ms: float = 25.0
     max_delay_ms: float = 1_000.0
     retry_on_timeout: bool = True
+    jitter: RetryJitter = RetryJitter.NONE
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
+        if not math.isfinite(self.base_delay_ms) or not math.isfinite(self.max_delay_ms):
+            raise ValueError("retry delays must be finite")
         if self.base_delay_ms < 0 or self.max_delay_ms < 0:
             raise ValueError("retry delays must not be negative")
+        if not isinstance(self.jitter, RetryJitter):
+            raise ValueError("jitter must be a RetryJitter value")
 
-    def delay_seconds(self, completed_attempts: int) -> float:
-        delay_ms = self.base_delay_ms * (2 ** max(0, completed_attempts - 1))
-        return min(delay_ms, self.max_delay_ms) / 1_000
+    def delay_seconds(
+        self,
+        completed_attempts: int,
+        random_source: Callable[[], float] | None = None,
+    ) -> float:
+        if completed_attempts < 1:
+            raise ValueError("completed_attempts must be at least 1")
+
+        capped_ms = self._capped_delay_ms(completed_attempts)
+        if self.jitter is RetryJitter.NONE or capped_ms == 0:
+            return capped_ms / 1_000
+        if random_source is None:
+            raise ValueError("a random source is required when jitter is enabled")
+
+        sample = random_source()
+        if not math.isfinite(sample) or not 0 <= sample <= 1:
+            raise ValueError("random source must return a finite value between 0 and 1")
+        if self.jitter is RetryJitter.FULL:
+            return capped_ms * sample / 1_000
+        if self.jitter is RetryJitter.EQUAL:
+            return capped_ms * (0.5 + sample * 0.5) / 1_000
+        raise ValueError(f"unsupported jitter strategy: {self.jitter}")
+
+    def _capped_delay_ms(self, completed_attempts: int) -> float:
+        if self.base_delay_ms == 0 or self.max_delay_ms == 0:
+            return 0.0
+        if self.base_delay_ms >= self.max_delay_ms:
+            return self.max_delay_ms
+
+        exponent = completed_attempts - 1
+        doublings_to_cap = math.ceil(
+            math.log2(self.max_delay_ms) - math.log2(self.base_delay_ms)
+        )
+        if exponent >= doublings_to_cap:
+            return self.max_delay_ms
+        return min(math.ldexp(self.base_delay_ms, exponent), self.max_delay_ms)
 
 
 ToolHandler = Callable[[Mapping[str, Any], ExecutionContext], Awaitable[Any] | Any]

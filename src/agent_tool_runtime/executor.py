@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import random
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -24,6 +25,7 @@ from .models import ExecutionContext, ToolCall, ToolDefinition, ToolError, ToolR
 from .registry import ToolRegistry
 
 Sleep = Callable[[float], Awaitable[None]]
+RandomSource = Callable[[], float]
 
 
 class ToolExecutor:
@@ -34,11 +36,13 @@ class ToolExecutor:
         idempotency_store: IdempotencyStore | None = None,
         event_sink: EventSink | None = None,
         sleep: Sleep = asyncio.sleep,
+        random_source: RandomSource = random.random,
     ) -> None:
         self._registry = registry
         self._idempotency = idempotency_store or InMemoryIdempotencyStore()
         self._events = event_sink or NullEventSink()
         self._sleep = sleep
+        self._random_source = random_source
 
     async def execute(self, call: ToolCall, context: ExecutionContext) -> ToolResult:
         started = time.monotonic()
@@ -199,7 +203,7 @@ class ToolExecutor:
                         attempts=attempt,
                     )
 
-            delay = policy.delay_seconds(attempt)
+            delay = policy.delay_seconds(attempt, self._random_source)
             await self._emit(
                 EventType.RETRY_SCHEDULED,
                 call,

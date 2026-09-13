@@ -12,7 +12,7 @@ and side effects.
 - JSON Schema validation before handler execution
 - Explicit registry allowlist
 - Per-tool scope authorization
-- Deadlines and bounded exponential retries
+- Deadlines and bounded exponential retries with `none`, `full`, or `equal` jitter
 - Idempotent replay and concurrent single-flight execution
 - Optional Redis coordination with TTL leases and fencing tokens
 - Stable error translation without leaking internal exceptions
@@ -55,6 +55,7 @@ import asyncio
 
 from agent_tool_runtime import (
     ExecutionContext,
+    RetryJitter,
     RetryPolicy,
     ToolCall,
     ToolDefinition,
@@ -87,7 +88,7 @@ registry.register(
         },
         required_scopes=frozenset({"capacity:reserve"}),
         timeout_seconds=2,
-        retry_policy=RetryPolicy(max_attempts=3),
+        retry_policy=RetryPolicy(max_attempts=3, jitter=RetryJitter.FULL),
     )
 )
 

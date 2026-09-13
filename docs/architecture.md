@@ -57,12 +57,16 @@ ToolCall + ExecutionContext
 - Lease expiry can allow a replacement owner while the previous handler is still running. Fencing
   prevents the old owner from overwriting Redis state, but side-effecting downstream systems should
   also receive an idempotency or fencing key.
-- Retry delays use exponential backoff without jitter in v0.1 for deterministic testing.
+- Retry delays support no jitter, full jitter over `[0, cap]`, or equal jitter over
+  `[cap / 2, cap]`. The executor accepts an injected random source so tests can assert the chosen
+  delay without relying on global random state.
 - Events are an internal contract; an OpenTelemetry adapter is planned.
 - Authorization uses scopes only. Policy engines and resource-level checks belong in adapters.
 
 ## Verification layers
 
 - Deterministic unit tests model Redis records, TTL expiry, stale owners, and cross-executor replay.
+- Hypothesis generates retry parameters and call sequences to check delay bounds, overflow safety,
+  replay consistency, and call-ID conflict behavior beyond hand-picked examples.
 - CI runs the same claim and completion scripts against a Redis 7 service on Python 3.11, 3.12,
   and 3.13. This catches Lua or client-protocol mistakes that a script-level fake cannot detect.

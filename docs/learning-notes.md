@@ -31,3 +31,24 @@ result only when both the fingerprint and current token match.
 Fencing protects the idempotency record, not the external system invoked by a handler. A durable
 design should pass the call ID or fencing token downstream so that a late worker cannot repeat or
 overwrite a side effect after losing its lease.
+
+## 2026-09-13 - Jitter is a coordination mechanism
+
+Exponential backoff limits how frequently one caller retries, but identical workers can still wake
+at the same times and recreate the overload that caused the failure. Jitter spreads those retries
+across a window. Full jitter samples from zero to the exponential cap and favors faster recovery;
+equal jitter keeps at least half of the cap and trades some recovery speed for less clustering near
+zero.
+
+The runtime accepts a random function rather than reading global random state inside the policy.
+This keeps production behavior independent between calls while allowing tests to reproduce an exact
+delay and verify the value emitted to observability.
+
+Generating large attempt counts also exposed a numerical edge in the original expression
+`base * 2 ** exponent`: it can construct an enormous intermediate value before applying the cap.
+The revised calculation determines whether the cap has already been reached using logarithms, then
+uses `ldexp` only while the uncapped value is representable.
+
+Example-based tests remain useful for event sequences and concrete failures. Property tests cover
+the wider invariants: delays remain finite and inside the selected jitter window, repeated calls
+execute once, and a reused call ID never runs different arguments.
